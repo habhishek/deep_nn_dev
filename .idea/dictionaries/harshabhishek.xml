@@ -2,6 +2,8 @@
   <dictionary name="harshabhishek">
     <words>
       <w>lamda</w>
+      <w>minibatch</w>
+      <w>minibatches</w>
     </words>
   </dictionary>
 </component>

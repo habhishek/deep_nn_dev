@@ -10,9 +10,11 @@ class model(object):
         """layers_dims is list containing the number of neurons in each layer, including the input layer, with
         length(number of hidden units + 1)
         Example:- if list was [2,3,3,1], input layer has 2 nodes, followed by 2 hidden layer with 3 nodes each
-        and an output layer with 1 node"""
+        and an output layer with 1 node
+        output_layer :- takes value "sigmoid" if binary classification or "softmax" if multi-class classification
+        """
         self.layers_dims = layers_dims
-        self.parameters = None
+        self.parameters = {}
         self.output_layer = output_layer
 
     def initialize_parameters_deep(self, parameter_init='random'):
@@ -164,7 +166,7 @@ class model(object):
             reg_cost += np.square(np.sum(self.parameters["W" + str(l)]))
         return reg_cost*(1/m)*(lamda/2)
 
-    def L_model_backward(self, AL, Y, caches, output_layer="sigmoid", lamda=0):
+    def L_model_backward(self, AL, Y, caches, lamda=0):
         """
         Implement the backward propagation for the [LINEAR->RELU] * (L-1) -> LINEAR -> SIGMOID group
 
@@ -186,7 +188,7 @@ class model(object):
         m = AL.shape[1]
         Y = Y.reshape(AL.shape) # after this line, Y is the same shape as AL
 
-        if output_layer == 'sigmoid':
+        if self.output_layer == 'sigmoid':
             # Initializing the backpropagation
             dAL = - (np.divide(Y, AL) - np.divide(1 - Y, 1 - AL))
 
@@ -218,18 +220,22 @@ class model(object):
 
         return grads
 
-    def fit(self, X, Y, optimizer, mini_batch_size, epochs, learning_rate=0.0075, regularization=None, beta=0, beta1=0, beta2=0,  epsilon=0):
+    def fit(self, X, Y, optimizer, mini_batch_size, num_epochs, learning_rate=0.0075, regularization=None, lamda=0, beta=0, beta1=0, beta2=0,  epsilon=0):
+        """
+        optimizer - can take values "gd", "momentum" or "adam"
+        regularization - by default None, "L2" for L2 regularisation along with regularisation parameter lamda not 0
+        """
         np.random.seed(1)
         L = len(self.layers_dims)
         m = X.shape[1]
         cost = 0
-        seed = 10 # for reshufling minibatches
-        t = 0 #initializing the counter for Adam update
+        seed = 10  # for reshuffling minibatches
+        t = 0  # initializing the counter for Adam update
 
         parameters  = self.parameters
         # Initialize the optimizer
         if optimizer == "gd":
-            pass # no initialization required for gradient descent
+            pass  # no initialization required for gradient descent
         elif optimizer == "momentum":
             v = initialize_velocity(parameters)
         elif optimizer == "adam":
@@ -240,7 +246,7 @@ class model(object):
 
             # Define the random minibatches. We increment the seed to reshuffle differently the dataset after each epoch
             seed = seed + 1
-            minibatches = random_mini_batches(X, Y, mini_batch_size, seed)
+            minibatches = self.random_mini_batches(X, Y, mini_batch_size=mini_batch_size, seed=0)
             cost_total = 0
 
             for minibatch in minibatches:
@@ -249,13 +255,13 @@ class model(object):
                 (minibatch_X, minibatch_Y) = minibatch
 
                 # Forward propagation
-                AL, caches = self.L_model_forward(self, minibatch_X, parameters)
+                AL, caches = self.L_model_forward(minibatch_X)
 
                 # Compute cost and add to the cost total
-                cost_total += compute_cost(a3, minibatch_Y)
+                cost_total += self.compute_cost(AL, minibatch_Y, lamda=lamda)
 
                 # Backward propagation
-                grads = backward_propagation(minibatch_X, minibatch_Y, caches)
+                grads = self.L_model_backward(AL, minibatch_Y, caches, lamda=lamda)
 
                 # Update parameters
                 if optimizer == "gd":
@@ -263,7 +269,7 @@ class model(object):
                 elif optimizer == "momentum":
                     parameters, v = update_parameters_with_momentum(parameters, grads, v, beta, learning_rate)
                 elif optimizer == "adam":
-                    t = t + 1 # Adam counter
+                    t = t + 1  # Adam counter
                     parameters, v, s = update_parameters_with_adam(parameters, grads, v, s,
                                                                    t, learning_rate, beta1, beta2,  epsilon)
             cost_avg = cost_total / m
