@@ -220,7 +220,90 @@ class model(object):
 
         return grads
 
-    def fit(self, X, Y, optimizer, mini_batch_size, num_epochs, learning_rate=0.0075, regularization=None, lamda=0, beta=0, beta1=0, beta2=0,  epsilon=0):
+    def update_parameters_with_gd(self, grads, learning_rate):
+        """
+        Implements parameter update in gradient descent
+        """
+        parameters = self.parameters
+        L = len(parameters) // 2  # total number of layers
+        for l in range(L):
+            parameters["W" + str(l+1)] = parameters["W" + str(l+1)] - learning_rate*grads["dW" + str(l+1)]
+            parameters["b" + str(l+1)] = parameters["b" + str(l+1)] - learning_rate*grads["db" + str(l+1)]
+
+        return parameters
+
+    def update_parameters_with_momentum(self, grads, v, beta, learning_rate):
+
+        parameters = self.parameters
+        L = len(parameters) // 2 # number of layers in the neural networks
+
+        # Momentum update for each parameter
+        for l in range(L):
+            # compute velocities
+            v["dW" + str(l+1)] = beta*v["dW" + str(l+1)] + (1-beta)*grads["dW" + str(l+1)]
+            v["db" + str(l+1)] = beta*v["db" + str(l+1)] + (1-beta)*grads["db" + str(l+1)]
+            # update parameters
+            parameters["W" + str(l+1)] = parameters["W" + str(l+1)] - learning_rate*v["dW" + str(l+1)]
+            parameters["b" + str(l+1)] = parameters["b" + str(l+1)] - learning_rate*v["db" + str(l+1)]
+
+        return parameters, v
+
+    def update_parameters_with_adam(self, grads, v, s, t, learning_rate,
+                                    beta1, beta2,  epsilon):
+        """
+        Update parameters using Adam
+
+        Arguments:
+        parameters -- python dictionary containing your parameters:
+                        parameters['W' + str(l)] = Wl
+                        parameters['b' + str(l)] = bl
+        grads -- python dictionary containing your gradients for each parameters:
+                        grads['dW' + str(l)] = dWl
+                        grads['db' + str(l)] = dbl
+        v -- Adam variable, moving average of the first gradient, python dictionary
+        s -- Adam variable, moving average of the squared gradient, python dictionary
+        learning_rate -- the learning rate, scalar.
+        beta1 -- Exponential decay hyperparameter for the first moment estimates
+        beta2 -- Exponential decay hyperparameter for the second moment estimates
+        epsilon -- hyperparameter preventing division by zero in Adam updates
+
+        Returns:
+        parameters -- python dictionary containing your updated parameters
+        v -- Adam variable, moving average of the first gradient, python dictionary
+        s -- Adam variable, moving average of the squared gradient, python dictionary
+        """
+
+        parameters = self.parameters
+        L = len(parameters) // 2                 # number of layers in the neural networks
+        v_corrected = {}                         # Initializing first moment estimate, python dictionary
+        s_corrected = {}                         # Initializing second moment estimate, python dictionary
+
+        # Perform Adam update on all parameters
+        for l in range(L):
+            # Moving average of the gradients. Inputs: "v, grads, beta1". Output: "v".
+            v["dW" + str(l+1)] = beta1*v["dW" + str(l+1)] + (1-beta1)*grads["dW" + str(l+1)]
+            v["db" + str(l+1)] = beta1*v["db" + str(l+1)] + (1-beta1)*grads["db" + str(l+1)]
+
+            # Compute bias-corrected first moment estimate. Inputs: "v, beta1, t". Output: "v_corrected".
+            v_corrected["dW" + str(l+1)] = v["dW" + str(l+1)]/(1-(beta1**t))
+            v_corrected["db" + str(l+1)] = v["db" + str(l+1)]/(1-(beta1**t))
+
+            # Moving average of the squared gradients. Inputs: "s, grads, beta2". Output: "s".
+            s["dW" + str(l+1)] = beta2*s["dW" + str(l+1)] + (1-beta2)*np.square(grads["dW" + str(l+1)])
+            s["db" + str(l+1)] = beta2*s["db" + str(l+1)] + (1-beta2)*np.square(grads["db" + str(l+1)])
+
+            # Compute bias-corrected second raw moment estimate. Inputs: "s, beta2, t". Output: "s_corrected".
+            s_corrected["dW" + str(l+1)] = s["dW" + str(l+1)]/(1-(beta2**t))
+            s_corrected["db" + str(l+1)] = s["db" + str(l+1)]/(1-(beta2**t))
+
+            # Update parameters. Inputs: "parameters, learning_rate, v_corrected, s_corrected, epsilon". Output: "parameters".
+            parameters["W" + str(l+1)] = parameters["W" + str(l+1)] - learning_rate*(v_corrected["dW" + str(l+1)]/np.sqrt(s_corrected["dW" + str(l+1)] + epsilon))
+            parameters["b" + str(l+1)] = parameters["b" + str(l+1)] - learning_rate*(v_corrected["db" + str(l+1)]/np.sqrt(s_corrected["db" + str(l+1)] + epsilon))
+
+        return parameters, v, s
+
+    def fit(self, X, Y, optimizer, mini_batch_size, num_epochs, learning_rate=0.0075, regularization=None, lamda=0,
+            beta=0, beta1=0.9, beta2=0.999,  epsilon=1e-8, print_cost=True):
         """
         optimizer - can take values "gd", "momentum" or "adam"
         regularization - by default None, "L2" for L2 regularisation along with regularisation parameter lamda not 0
@@ -228,11 +311,11 @@ class model(object):
         np.random.seed(1)
         L = len(self.layers_dims)
         m = X.shape[1]
-        cost = 0
+        costs = []
         seed = 10  # for reshuffling minibatches
         t = 0  # initializing the counter for Adam update
 
-        parameters  = self.parameters
+        parameters = self.parameters
         # Initialize the optimizer
         if optimizer == "gd":
             pass  # no initialization required for gradient descent
@@ -265,13 +348,13 @@ class model(object):
 
                 # Update parameters
                 if optimizer == "gd":
-                    parameters = update_parameters_with_gd(parameters, grads, learning_rate)
+                    parameters = self.update_parameters_with_gd(grads=grads, learning_rate=learning_rate)
                 elif optimizer == "momentum":
-                    parameters, v = update_parameters_with_momentum(parameters, grads, v, beta, learning_rate)
+                    parameters, v = self.update_parameters_with_momentum(grads=grads, v=v, beta=beta, learning_rate=learning_rate)
                 elif optimizer == "adam":
                     t = t + 1  # Adam counter
-                    parameters, v, s = update_parameters_with_adam(parameters, grads, v, s,
-                                                                   t, learning_rate, beta1, beta2,  epsilon)
+                    parameters, v, s = self.update_parameters_with_adam(grads=grads, v=v, s=s,
+                                                                   t=t, learning_rate=learning_rate, beta1=beta1, beta2=beta2,  epsilon=epsilon)
             cost_avg = cost_total / m
 
             # Print the cost every 1000 epoch
